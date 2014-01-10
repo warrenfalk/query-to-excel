@@ -33,8 +33,8 @@
             this.exportToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.excelToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.groupBox1 = new System.Windows.Forms.GroupBox();
-            this.connectionDropdown = new System.Windows.Forms.ComboBox();
             this.label1 = new System.Windows.Forms.Label();
+            this.connectionDropdown = new System.Windows.Forms.ComboBox();
             this.menuStrip1.SuspendLayout();
             this.groupBox1.SuspendLayout();
             this.SuspendLayout();
@@ -50,6 +50,7 @@
             this.queryTextBox.Size = new System.Drawing.Size(842, 421);
             this.queryTextBox.TabIndex = 0;
             this.queryTextBox.WordWrap = false;
+            this.queryTextBox.KeyDown += new System.Windows.Forms.KeyEventHandler(this.queryTextBox_KeyDown);
             // 
             // menuStrip1
             // 
@@ -89,14 +90,6 @@
             this.groupBox1.TabStop = false;
             this.groupBox1.Text = "Connection";
             // 
-            // connectionDropdown
-            // 
-            this.connectionDropdown.FormattingEnabled = true;
-            this.connectionDropdown.Location = new System.Drawing.Point(79, 19);
-            this.connectionDropdown.Name = "connectionDropdown";
-            this.connectionDropdown.Size = new System.Drawing.Size(192, 21);
-            this.connectionDropdown.TabIndex = 0;
-            // 
             // label1
             // 
             this.label1.AutoSize = true;
@@ -105,6 +98,14 @@
             this.label1.Size = new System.Drawing.Size(61, 13);
             this.label1.TabIndex = 1;
             this.label1.Text = "&Connection";
+            // 
+            // connectionDropdown
+            // 
+            this.connectionDropdown.FormattingEnabled = true;
+            this.connectionDropdown.Location = new System.Drawing.Point(79, 19);
+            this.connectionDropdown.Name = "connectionDropdown";
+            this.connectionDropdown.Size = new System.Drawing.Size(192, 21);
+            this.connectionDropdown.TabIndex = 0;
             // 
             // MainForm
             // 

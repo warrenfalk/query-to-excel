@@ -543,5 +543,36 @@ namespace QueryToExcel
                     //stream.Dispose();
             }
         }
+
+        private void queryTextBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyData == (Keys.A | Keys.Control))
+            {
+                e.SuppressKeyPress = true;
+                Trace.WriteLine("Select All");
+                queryTextBox.SelectAll();
+                return;
+            }
+            if (e.KeyData == (Keys.Back | Keys.Control))
+            {
+                e.SuppressKeyPress = true;
+                int selStart = queryTextBox.SelectionStart;
+                while (selStart > 0 && queryTextBox.Text.Substring(selStart - 1, 1) == " ")
+                {
+                    selStart--;
+                }
+                int prevSpacePos = -1;
+                if (selStart != 0)
+                {
+                    prevSpacePos = queryTextBox.Text.LastIndexOf(' ', selStart - 1);
+                }
+                queryTextBox.Select(prevSpacePos + 1, queryTextBox.SelectionStart - prevSpacePos - 1);
+                queryTextBox.SelectedText = "";
+                return;
+            }
+
+            Trace.WriteLine(string.Format("e.KeyData == (Keys.{0})", e.KeyData.ToString().Replace(", ", " | Keys.")));
+
+        }
     }
 }
