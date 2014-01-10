@@ -3,6 +3,8 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
+using System.Data.SqlClient;
+using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
@@ -16,6 +18,7 @@ namespace QueryToExcel
 {
     public partial class MainForm : Form
     {
+        readonly string TemplateFolder = @"C:\Users\wfalk\source\QueryToExcel\Template";
         ConnectionInfo[] Connections = new ConnectionInfo[] {
             new ConnectionInfo {
                 Name = "DIV",
@@ -31,6 +34,40 @@ namespace QueryToExcel
             },
         };
 
+        class StringMap : IEnumerable<string>
+        {
+            Dictionary<string, int> map = new Dictionary<string, int>();
+            List<string> list = new List<string>();
+
+            public int Store(string str)
+            {
+                int id;
+                if (map.TryGetValue(str, out id))
+                    return id;
+                map.Add(str, id = list.Count);
+                list.Add(str);
+                return id++;
+            }
+
+            public int Count
+            {
+                get
+                {
+                    return list.Count;
+                }
+            }
+
+            public IEnumerator<string> GetEnumerator()
+            {
+                return list.GetEnumerator();
+            }
+
+            System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator()
+            {
+                return GetEnumerator();
+            }
+        }
+
         class ConnectionInfo
         {
             public string Name { get; set; }
@@ -43,6 +80,14 @@ namespace QueryToExcel
                 get
                 {
                     return string.Format(@"Provider=SQLOLEDB.1;Integrated Security=SSPI;Persist Security Info=True;Initial Catalog={2};Data Source={1};Use Procedure for Prepare=1;Auto Translate=True;Packet Size=4096;Use Encryption for Data=False;Tag with column collation when possible=False", Name, Server, Database);
+                }
+            }
+
+            public string DotNetConnectionString
+            {
+                get
+                {
+                    return string.Format(@"Data Source={1}; Initial Catalog={2}; User Id=sa; Password=D1visi0ns; Application Name=WebServices;", Name, Server, Database);
                 }
             }
 
@@ -61,38 +106,323 @@ namespace QueryToExcel
 
         private void excelToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            // basically zip up everything in the template directory, doing template replacement in appropriate places
-            using (ZipFile zip = new ZipFile())
+            ConnectionInfo ci = (ConnectionInfo)connectionDropdown.SelectedItem;
+            using (SqlConnection conn = new SqlConnection(ci.DotNetConnectionString))
             {
-                // TODO: fix this, load from resource or something
-                Add(zip, @"C:\Users\wfalk\source\QueryToExcel\Template", "", delegate(string sourcePath, string targetFolder)
+                conn.Open();
+
+                using (SqlCommand cmd = conn.CreateCommand())
                 {
-                    if (targetFolder == "xl" && Path.GetFileName(sourcePath) == "connections.xml")
+                    cmd.CommandType = CommandType.Text;
+                    cmd.CommandText = queryTextBox.Text;
+
+                    using (SqlDataReader reader = cmd.ExecuteReader())
                     {
-                        ConnectionInfo ci = (ConnectionInfo)connectionDropdown.SelectedItem;
+                        int columns = reader.FieldCount;
 
-                        XmlDocument doc = new XmlDocument();
-                        doc.Load(sourcePath);
-                        XmlNamespaceManager nsmgr = new XmlNamespaceManager(doc.NameTable);
-                        nsmgr.AddNamespace("x", doc.DocumentElement.GetAttribute("xmlns"));
+                        MemoryStream queryTableFile = new MemoryStream();
+                        MemoryStream tableFile = new MemoryStream();
+                        MemoryStream sheetFile = new MemoryStream();
+                        MemoryStream sharedStringsFile = new MemoryStream();
+                        MemoryStream workbookFile = new MemoryStream();
 
-                        XmlElement c = (XmlElement)doc.SelectSingleNode("/x:connection");
-                        c.SetAttribute("name", ci.Name);
-                        c.SetAttribute("description", ci.Name);
-                        
-                        XmlElement dbPr = (XmlElement)doc.SelectSingleNode("/x:connections/x:connection/x:dbPr", nsmgr);
-                        dbPr.SetAttribute("command", CommandTextToAttribute(queryTextBox.Text));
-                        dbPr.SetAttribute("connection", ci.ConnectionString);
-                        MemoryStream file = new MemoryStream();
-                        doc.Save(file);
-                        file.Position = 0;
-                        return file;
+                        StringMap strMap = new StringMap();
+
+                        int rowCount = BuildSheetFile(reader, strMap, sheetFile);
+                        BuildSharedStringsFile(strMap, sharedStringsFile);
+                        BuildQueryTableFile(reader, queryTableFile);
+                        BuildTableFile(reader, rowCount, tableFile);
+                        BuildWorkbookFile(reader, rowCount, workbookFile);
+
+                        // basically zip up everything in the template directory, doing template replacement in appropriate places
+                        using (ZipFile zip = new ZipFile())
+                        {
+                            // TODO: fix this, load from resource or something
+                            Add(zip, TemplateFolder, "", delegate(string sourcePath, string targetFolder)
+                            {
+                                Trace.WriteLine(sourcePath + "   -->    " + targetFolder);
+                                if (targetFolder == @"xl/queryTables" && Path.GetFileName(sourcePath) == "queryTable1.xml")
+                                {
+                                    return queryTableFile;
+                                }
+                                else if (targetFolder == @"xl/tables" && Path.GetFileName(sourcePath) == "table1.xml")
+                                {
+                                    return tableFile;
+                                }
+                                else if (targetFolder == @"xl" && Path.GetFileName(sourcePath) == "sharedStrings.xml")
+                                {
+                                    return sharedStringsFile;
+                                }
+                                else if (targetFolder == @"xl" && Path.GetFileName(sourcePath) == "workbook.xml")
+                                {
+                                    return workbookFile;
+                                }
+                                else if (targetFolder == @"xl/worksheets" && Path.GetFileName(sourcePath) == "sheet1.xml")
+                                {
+                                    return sheetFile;
+                                }
+                                else if (targetFolder == "xl" && Path.GetFileName(sourcePath) == "connections.xml")
+                                {
+                                    XmlDocument doc = new XmlDocument();
+                                    doc.Load(sourcePath);
+                                    XmlNamespaceManager nsmgr = new XmlNamespaceManager(doc.NameTable);
+                                    nsmgr.AddNamespace("x", doc.DocumentElement.GetAttribute("xmlns"));
+
+                                    /*
+                                     * now setting the following to "Query"
+                                    XmlElement c = (XmlElement)doc.SelectSingleNode("/x:connections/x:connection", nsmgr);
+                                    c.SetAttribute("name", ci.Name);
+                                    c.SetAttribute("description", ci.Name);
+                                     */
+
+                                    XmlElement dbPr = (XmlElement)doc.SelectSingleNode("/x:connections/x:connection/x:dbPr", nsmgr);
+                                    dbPr.SetAttribute("command", CommandTextToAttribute(queryTextBox.Text));
+                                    dbPr.SetAttribute("connection", ci.ConnectionString);
+
+                                    MemoryStream file = new MemoryStream();
+                                    doc.Save(file);
+                                    file.Position = 0;
+                                    return file;
+                                }
+                                return null;
+                            });
+                            // TODO: fix this, save to different filename if first exists already
+                            zip.Save(@"C:\Users\wfalk\Documents\Output.xlsx");
+                        }
                     }
-                    return null;
-                });
-                // TODO: fix this, save to different filename if first exists already
-                zip.Save(@"C:\Users\wfalk\Documents\MyZipFile.zip");
+                }
+
             }
+        }
+
+        private void BuildWorkbookFile(SqlDataReader reader, int rowCount, MemoryStream workbookFile)
+        {
+            XmlDocument doc = new XmlDocument();
+            doc.Load(Path.Combine(TemplateFolder, "xl", "workbook.xml"));
+            XmlNamespaceManager nsmgr = new XmlNamespaceManager(doc.NameTable);
+            nsmgr.AddNamespace("x", doc.DocumentElement.GetAttribute("xmlns"));
+
+            XmlElement definedName = (XmlElement)doc.SelectSingleNode("/x:workbook/x:definedNames/x:definedName", nsmgr);
+            definedName.InnerText = string.Format("Sheet1!$A$1:${0}${1}", GetColumnLetter(reader.FieldCount), rowCount + 1);
+
+            XmlTextWriter wr = new XmlTextWriter(workbookFile, Encoding.UTF8);
+            wr.Formatting = Formatting.None;
+            doc.Save(wr);
+            wr.Flush();
+            workbookFile.Position = 0;
+        }
+
+        private void BuildSharedStringsFile(StringMap strMap, MemoryStream sharedStringsFile)
+        {
+            XmlDocument doc = new XmlDocument();
+            XmlElement sst = doc.CreateElement("sst", "http://schemas.openxmlformats.org/spreadsheetml/2006/main");
+            doc.AppendChild(sst);
+            sst.SetAttribute("count", strMap.Count.ToString());
+            sst.SetAttribute("uniqueCount", strMap.Count.ToString());
+            foreach (var str in strMap)
+            {
+                XmlElement si = doc.CreateElement("si", "http://schemas.openxmlformats.org/spreadsheetml/2006/main");
+                sst.AppendChild(si);
+
+                XmlElement t = doc.CreateElement("t", "http://schemas.openxmlformats.org/spreadsheetml/2006/main");
+                t.InnerText = str;
+                si.AppendChild(t);
+            }
+
+            XmlTextWriter wr = new XmlTextWriter(sharedStringsFile, Encoding.UTF8);
+            wr.Formatting = Formatting.None;
+            doc.Save(wr);
+            wr.Flush();
+            sharedStringsFile.Position = 0;
+
+        }
+
+        private int BuildSheetFile(SqlDataReader reader, StringMap stringMap, MemoryStream sheetFile)
+        {
+            XmlDocument doc = new XmlDocument();
+            doc.PreserveWhitespace = true;
+            doc.Load(Path.Combine(TemplateFolder, "xl", "worksheets", "sheet1.xml"));
+            XmlNamespaceManager nsmgr = new XmlNamespaceManager(doc.NameTable);
+            nsmgr.AddNamespace("x", doc.DocumentElement.GetAttribute("xmlns"));
+
+            XmlElement cols = doc.CreateElement("cols", doc.DocumentElement.GetAttribute("xmlns"));
+            for (int i = 0; i < reader.FieldCount; i++)
+            {
+                XmlElement col = doc.CreateElement("col", doc.DocumentElement.GetAttribute("xmlns"));
+                col.SetAttribute("min", (i + 1).ToString());
+                col.SetAttribute("max", (i + 1).ToString());
+                // TODO: maybe try to pre-calculate
+                col.SetAttribute("width", "11");
+                col.SetAttribute("bestFit", "1");
+                col.SetAttribute("customWidth", "1");
+                cols.AppendChild(col);
+            }
+            Replace(doc, "/x:worksheet/x:cols", nsmgr, cols);
+
+            XmlElement sheetData = doc.CreateElement("sheetData", doc.DocumentElement.GetAttribute("xmlns"));
+            Replace(doc, "/x:worksheet/x:sheetData", nsmgr, sheetData);
+
+            // emit header row
+            {
+                XmlElement row = doc.CreateElement("row", doc.DocumentElement.GetAttribute("xmlns"));
+                row.SetAttribute("r", "1");
+                row.SetAttribute("spans", string.Format("1:{0}", reader.FieldCount));
+                row.SetAttribute("dyDescent", "http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac", "0.25");
+                sheetData.AppendChild(row);
+
+                for (int i = 0; i < reader.FieldCount; i++)
+                {
+                    XmlElement c = doc.CreateElement("c", doc.DocumentElement.GetAttribute("xmlns"));
+                    c.SetAttribute("r", GetColumnLetter(i + 1) + "1");
+                    c.SetAttribute("t", "s");
+
+                    XmlElement v = doc.CreateElement("v", doc.DocumentElement.GetAttribute("xmlns"));
+                    string cellValue = reader.GetName(i);
+                    if (cellValue != "")
+                    {
+                        int id = stringMap.Store(cellValue);
+                        v.InnerText = id.ToString();
+                        row.AppendChild(c);
+                        c.AppendChild(v);
+                    }
+                }
+            }
+
+            int rowCount = 0;
+            while (reader.Read())
+            {
+                int rowNum = rowCount + 2;
+                XmlElement row = doc.CreateElement("row", doc.DocumentElement.GetAttribute("xmlns"));
+                row.SetAttribute("r", rowNum.ToString());
+                row.SetAttribute("spans", string.Format("1:{0}", reader.FieldCount));
+                row.SetAttribute("dyDescent", "http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac", "0.25");
+                sheetData.AppendChild(row);
+
+                for (int i = 0; i < reader.FieldCount; i++)
+                {
+                    object value = reader.GetValue(i);
+                    XmlElement c = doc.CreateElement("c", doc.DocumentElement.GetAttribute("xmlns"));
+                    c.SetAttribute("r", GetColumnLetter(i + 1) + rowNum.ToString());
+                    c.SetAttribute("t", "s");
+
+                    XmlElement v = doc.CreateElement("v", doc.DocumentElement.GetAttribute("xmlns"));
+                    string cellValue = GetStringValue(reader, i);
+                    if (cellValue != "")
+                    {
+                        int id = stringMap.Store(cellValue);
+                        v.InnerText = id.ToString();
+                        row.AppendChild(c);
+                        c.AppendChild(v);
+                    }
+                }
+
+                rowCount++;
+            }
+
+            XmlElement dimension = (XmlElement)doc.SelectSingleNode("/x:worksheet/x:dimension", nsmgr);
+            dimension.SetAttribute("ref", string.Format("A1:{0}{1}", GetColumnLetter(reader.FieldCount), rowCount + 1));
+
+            XmlTextWriter wr = new XmlTextWriter(sheetFile, new UTF8Encoding(false));
+            wr.Formatting = Formatting.None;
+            doc.Save(wr);
+            wr.Flush();
+            sheetFile.Position = 0;
+
+            return rowCount;
+        }
+
+        private void Replace(XmlDocument doc, string path, XmlNamespaceManager nsmgr, XmlElement replacement)
+        {
+            XmlNode node = doc.SelectSingleNode(path, nsmgr);
+            node.ParentNode.ReplaceChild(replacement, node);
+        }
+
+        private string GetStringValue(SqlDataReader reader, int i)
+        {
+            if (reader.IsDBNull(i))
+                return String.Empty;
+            object obj = reader.GetValue(i);
+            return obj.ToString();
+        }
+
+        private void BuildTableFile(SqlDataReader reader, int rowCount, MemoryStream tableFile)
+        {
+            XmlDocument doc = new XmlDocument();
+            doc.Load(Path.Combine(TemplateFolder, "xl", "tables", "table1.xml"));
+            XmlNamespaceManager nsmgr = new XmlNamespaceManager(doc.NameTable);
+            nsmgr.AddNamespace("x", doc.DocumentElement.GetAttribute("xmlns"));
+
+            XmlElement table = doc.DocumentElement;
+            // TODO: get number of rows
+            table.SetAttribute("ref", string.Format("A1:{0}{1}", GetColumnLetter(reader.FieldCount), rowCount + 1));
+
+            // TODO: get number of rows
+            XmlElement autoFilter = (XmlElement)table.SelectSingleNode("x:autoFilter", nsmgr);
+            autoFilter.SetAttribute("ref", string.Format("A1:{0}{1}", GetColumnLetter(reader.FieldCount), rowCount + 1));
+
+            XmlElement tableColumns = (XmlElement)table.SelectSingleNode("x:tableColumns", nsmgr);
+            tableColumns.SetAttribute("count", string.Format("{0}", reader.FieldCount));
+
+            // remove all existing fields from template
+            while (tableColumns.FirstChild != null)
+                tableColumns.RemoveChild(tableColumns.FirstChild);
+            for (int i = 0; i < reader.FieldCount; i++)
+            {
+                XmlElement tableColumn = doc.CreateElement("tableColumn", doc.DocumentElement.GetAttribute("xmlns"));
+                tableColumn.SetAttribute("id", string.Format("{0}", i + 1));
+                tableColumn.SetAttribute("uniqueName", string.Format("{0}", i + 1));
+                tableColumn.SetAttribute("name", reader.GetName(i));
+                tableColumn.SetAttribute("queryTableFieldId", string.Format("{0}", i + 1));
+                tableColumns.AppendChild(tableColumn);
+            }
+
+            XmlTextWriter wr = new XmlTextWriter(tableFile, Encoding.UTF8);
+            wr.Formatting = Formatting.None;
+            doc.Save(wr);
+            wr.Flush();
+            tableFile.Position = 0;
+        }
+
+        private void BuildQueryTableFile(SqlDataReader reader, MemoryStream queryTableFile)
+        {
+            XmlDocument doc = new XmlDocument();
+            doc.Load(Path.Combine(TemplateFolder, "xl", "queryTables", "queryTable1.xml"));
+            XmlNamespaceManager nsmgr = new XmlNamespaceManager(doc.NameTable);
+            nsmgr.AddNamespace("x", doc.DocumentElement.GetAttribute("xmlns"));
+
+            XmlElement queryTableRefresh = (XmlElement)doc.SelectSingleNode("/x:queryTable/x:queryTableRefresh", nsmgr);
+            queryTableRefresh.SetAttribute("nextId", string.Format("{0}", reader.FieldCount + 1));
+
+            XmlElement queryTableFields = (XmlElement)queryTableRefresh.SelectSingleNode("x:queryTableFields", nsmgr);
+            queryTableFields.SetAttribute("count", string.Format("{0}", reader.FieldCount));
+
+            // remove all existing fields from template
+            while (queryTableFields.FirstChild != null)
+                queryTableFields.RemoveChild(queryTableFields.FirstChild);
+            for (int i = 0; i < reader.FieldCount; i++)
+            {
+                XmlElement queryTableField = doc.CreateElement("queryTableField", doc.DocumentElement.GetAttribute("xmlns"));
+                queryTableField.SetAttribute("id", string.Format("{0}", i + 1));
+                queryTableField.SetAttribute("name", reader.GetName(i));
+                queryTableField.SetAttribute("tableColumnId", string.Format("{0}", i + 1));
+                queryTableFields.AppendChild(queryTableField);
+            }
+
+            XmlTextWriter wr = new XmlTextWriter(queryTableFile, Encoding.UTF8);
+            wr.Formatting = Formatting.None;
+            doc.Save(wr);
+            wr.Flush();
+            queryTableFile.Position = 0;
+        }
+
+        private string GetColumnLetter(int p)
+        {
+            int l = (p - 1) % 26;
+            int h = (p - 1 - l) / 26;
+            if (h == 0)
+                return string.Format("{0}", (char)('A' + l));
+            else
+                return string.Format("{1}{0}", (char)('A' + l), (char)('A' + h));
         }
 
         private readonly static Regex CommandTextParse = new Regex(@"[\r\n]", RegexOptions.Compiled | RegexOptions.Multiline);
@@ -112,10 +442,10 @@ namespace QueryToExcel
                 foreach (string file in Directory.GetFiles(sourcePath))
                     Add(zip, file, targetFolder, hook);
                 foreach (string file in Directory.GetDirectories(sourcePath))
-                    Add(zip, file, Path.Combine(targetFolder, Path.GetFileName(file)), hook);
+                    Add(zip, file, Path.Combine(targetFolder, Path.GetFileName(file)).Replace(Path.DirectorySeparatorChar, '/'), hook);
                 return;
             }
-            string target = Path.Combine(targetFolder, Path.GetFileName(sourcePath));
+            string target = Path.Combine(targetFolder, Path.GetFileName(sourcePath)).Replace(Path.DirectorySeparatorChar, '/');
             Stream stream;
             stream = hook(sourcePath, targetFolder);
             try
