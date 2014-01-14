@@ -53,6 +53,10 @@ namespace QueryToExcel
             map.Add("numeric", 0);
             map.Add("varchar", null);
             map.Add("nvarchar", null);
+            map.Add("char", null);
+            map.Add("nchar", null);
+            map.Add("text", null);
+            map.Add("ntext", null);
             return map;
         }
 
