@@ -382,6 +382,7 @@ namespace QueryToExcel
                     if (cellValue != "")
                     {
                         widths[i] = Math.Max(widths[i], g.MeasureString(cellValue, font).Width + 18f); // 18f to include filter dropdown button
+                        widths[i] = Math.Max(254.9f, widths[i]); // excel has a column width limit of 255-ish
                         int id = stringMap.Store(cellValue);
                         v.InnerText = id.ToString();
                         row.AppendChild(c);
