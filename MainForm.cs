@@ -285,7 +285,7 @@ namespace QueryToExcel
                 sst.AppendChild(si);
 
                 XmlElement t = doc.CreateElement("t", "http://schemas.openxmlformats.org/spreadsheetml/2006/main");
-                t.InnerText = str;
+                t.InnerText = XmlSanitize(str);
                 si.AppendChild(t);
             }
 
@@ -295,6 +295,37 @@ namespace QueryToExcel
             wr.Flush();
             sharedStringsFile.Position = 0;
 
+        }
+
+        private string XmlSanitize(string str)
+        {
+            int len = str.Length;
+            for (int i = 0; i < len; i++)
+            {
+                char c = str[i];
+                if (c >= 0x20)
+                    continue;
+                if (c == 0x9 || c == 0xA || c == 0xD)
+                    continue;
+                return RemoveInvalidXmlChars(str);
+            }
+            return str;
+        }
+
+        private string RemoveInvalidXmlChars(string str)
+        {
+            char[] cc = str.ToCharArray();
+            int len = cc.Length;
+            for (int i = 0; i < len; i++)
+            {
+                char c = cc[i];
+                if (c >= 0x20)
+                    continue;
+                if (c == 0x9 || c == 0xA || c == 0xD)
+                    continue;
+                cc[i] = ' ';
+            }
+            return new string(cc);
         }
 
         private int BuildSheetFile(SqlDataReader reader, StringMap stringMap, MemoryStream sheetFile)
