@@ -10,6 +10,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Xml;
@@ -40,6 +41,10 @@ namespace QueryToExcel
             },
         };
         readonly Dictionary<string, int?> TypeStyleMap = CreateTypeStyleMap();
+
+        ConnectionInfo currentConnection;
+        int currentRowCount;
+        DateTime? queryStartTime;
 
         private static Dictionary<string, int?> CreateTypeStyleMap()
         {
@@ -141,15 +146,43 @@ namespace QueryToExcel
 
         private void excelToolStripMenuItem_Click(object sender, EventArgs e)
         {
+            BackgroundWorker bw = new BackgroundWorker();
+            bw.DoWork += ExportToExcel;
+            excelToolStripMenuItem.Enabled = false;
+            bw.RunWorkerCompleted += delegate(object p1, RunWorkerCompletedEventArgs p2)
+            {
+                excelToolStripMenuItem.Enabled = true;
+            };
+            currentConnection = (ConnectionInfo)connectionDropdown.SelectedItem;
+            bw.RunWorkerAsync();
+        }
+
+        private void OnUiThread(Action action)
+        {
+            Invoke(action);
+        }
+
+        private void ExportToExcel(object sender, DoWorkEventArgs e)
+        {
             try
             {
+                currentRowCount = 0;
+                OnUiThread(delegate
+                {
+                    statusRowCount.Text = "Rows: 0";
+                    statusElapsed.Text = "Elapsed: 0:00:00";
+                    statusFileSize.Text = "Size: 0KB";
+                });
+
+                queryStartTime = DateTime.Now;
+
                 string docs = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
                 string name = "QueryResults";
                 string extension = ".xlsx";
                 string filename = Path.Combine(docs, name + extension);
 
-                ConnectionInfo ci = (ConnectionInfo)connectionDropdown.SelectedItem;
-                using (SqlConnection conn = new SqlConnection(ci.DotNetConnectionString))
+                OnUiThread(delegate { statusCurrentOperation.Text = "Connecting..."; });
+                using (SqlConnection conn = new SqlConnection(currentConnection.DotNetConnectionString))
                 {
                     conn.Open();
 
@@ -159,8 +192,10 @@ namespace QueryToExcel
                         cmd.CommandText = queryTextBox.Text;
                         cmd.CommandTimeout = 1000 * 60 * 10;
 
+                        OnUiThread(delegate { statusCurrentOperation.Text = "Sending Query..."; });
                         using (SqlDataReader reader = cmd.ExecuteReader())
                         {
+                            OnUiThread(delegate { statusCurrentOperation.Text = "Waiting for data..."; });
                             int columns = reader.FieldCount;
 
                             MemoryStream queryTableFile = new MemoryStream();
@@ -220,7 +255,7 @@ namespace QueryToExcel
 
                                         XmlElement dbPr = (XmlElement)doc.SelectSingleNode("/x:connections/x:connection/x:dbPr", nsmgr);
                                         dbPr.SetAttribute("command", CommandTextToAttribute(queryTextBox.Text));
-                                        dbPr.SetAttribute("connection", ci.ConnectionString);
+                                        dbPr.SetAttribute("connection", currentConnection.ConnectionString);
 
                                         MemoryStream file = new MemoryStream();
                                         doc.Save(file);
@@ -239,6 +274,8 @@ namespace QueryToExcel
 
                                 zip.Save(filename);
                             }
+
+                            OnUiThread(delegate { statusFileSize.Text = string.Format("Size: {0}KB", Math.Round(new FileInfo(filename).Length * 100f / 1024f) / 100f); });
                         }
                     }
 
@@ -248,10 +285,18 @@ namespace QueryToExcel
                 psi.UseShellExecute = true;
                 psi.Verb = "Open";
                 Process p = Process.Start(psi);
+
+                OnUiThread(delegate { statusCurrentOperation.Text = "Complete"; });
             }
             catch (Exception ex)
             {
+                OnUiThread(delegate { statusCurrentOperation.Text = string.Format("Error: {0}", ex.Message); });
                 MessageBox.Show(ex.ToString());
+            }
+            finally
+            {
+                statusElapsed.Text = string.Format("Elapsed: {0:g}", TimeSpan.FromSeconds(Math.Round(DateTime.Now.Subtract((DateTime)queryStartTime).TotalSeconds))); 
+                queryStartTime = null;
             }
         }
 
@@ -394,6 +439,7 @@ namespace QueryToExcel
             int rowCount = 0;
             while (reader.Read())
             {
+                OnUiThread(delegate { statusCurrentOperation.Text = "Reading Data..."; });
                 int rowNum = rowCount + 2;
                 XmlElement row = doc.CreateElement("row", doc.DocumentElement.GetAttribute("xmlns"));
                 row.SetAttribute("r", rowNum.ToString());
@@ -424,6 +470,7 @@ namespace QueryToExcel
                 }
 
                 rowCount++;
+                currentRowCount++;
             }
 
 
@@ -610,6 +657,13 @@ namespace QueryToExcel
 
             Trace.WriteLine(string.Format("e.KeyData == (Keys.{0})", e.KeyData.ToString().Replace(", ", " | Keys.")));
 
+        }
+
+        private void statusTimer_Tick(object sender, EventArgs e)
+        {
+            if (queryStartTime != null)
+                statusElapsed.Text = string.Format("Elapsed: {0:g}", TimeSpan.FromSeconds(Math.Round(DateTime.Now.Subtract((DateTime)queryStartTime).TotalSeconds)));
+            statusRowCount.Text = string.Format("Rows: {0}", currentRowCount);
         }
     }
 }

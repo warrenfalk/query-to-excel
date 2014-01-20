@@ -28,6 +28,7 @@
         /// </summary>
         private void InitializeComponent()
         {
+            this.components = new System.ComponentModel.Container();
             this.queryTextBox = new System.Windows.Forms.TextBox();
             this.menuStrip1 = new System.Windows.Forms.MenuStrip();
             this.exportToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
@@ -35,8 +36,15 @@
             this.groupBox1 = new System.Windows.Forms.GroupBox();
             this.label1 = new System.Windows.Forms.Label();
             this.connectionDropdown = new System.Windows.Forms.ComboBox();
+            this.statusStrip1 = new System.Windows.Forms.StatusStrip();
+            this.statusCurrentOperation = new System.Windows.Forms.ToolStripStatusLabel();
+            this.statusElapsed = new System.Windows.Forms.ToolStripStatusLabel();
+            this.statusRowCount = new System.Windows.Forms.ToolStripStatusLabel();
+            this.statusFileSize = new System.Windows.Forms.ToolStripStatusLabel();
+            this.statusTimer = new System.Windows.Forms.Timer(this.components);
             this.menuStrip1.SuspendLayout();
             this.groupBox1.SuspendLayout();
+            this.statusStrip1.SuspendLayout();
             this.SuspendLayout();
             // 
             // queryTextBox
@@ -47,7 +55,7 @@
             this.queryTextBox.Multiline = true;
             this.queryTextBox.Name = "queryTextBox";
             this.queryTextBox.ScrollBars = System.Windows.Forms.ScrollBars.Both;
-            this.queryTextBox.Size = new System.Drawing.Size(842, 421);
+            this.queryTextBox.Size = new System.Drawing.Size(842, 399);
             this.queryTextBox.TabIndex = 0;
             this.queryTextBox.WordWrap = false;
             this.queryTextBox.KeyDown += new System.Windows.Forms.KeyEventHandler(this.queryTextBox_KeyDown);
@@ -107,6 +115,54 @@
             this.connectionDropdown.Size = new System.Drawing.Size(192, 21);
             this.connectionDropdown.TabIndex = 0;
             // 
+            // statusStrip1
+            // 
+            this.statusStrip1.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.statusCurrentOperation,
+            this.statusElapsed,
+            this.statusRowCount,
+            this.statusFileSize});
+            this.statusStrip1.Location = new System.Drawing.Point(0, 479);
+            this.statusStrip1.Name = "statusStrip1";
+            this.statusStrip1.Size = new System.Drawing.Size(842, 22);
+            this.statusStrip1.TabIndex = 3;
+            this.statusStrip1.Text = "statusStrip1";
+            // 
+            // statusCurrentOperation
+            // 
+            this.statusCurrentOperation.Name = "statusCurrentOperation";
+            this.statusCurrentOperation.Size = new System.Drawing.Size(635, 17);
+            this.statusCurrentOperation.Spring = true;
+            this.statusCurrentOperation.Text = "Ready";
+            this.statusCurrentOperation.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
+            // 
+            // statusElapsed
+            // 
+            this.statusElapsed.BorderStyle = System.Windows.Forms.Border3DStyle.SunkenOuter;
+            this.statusElapsed.Name = "statusElapsed";
+            this.statusElapsed.Size = new System.Drawing.Size(89, 17);
+            this.statusElapsed.Text = "Elapsed: 0:00:00";
+            // 
+            // statusRowCount
+            // 
+            this.statusRowCount.BorderStyle = System.Windows.Forms.Border3DStyle.SunkenOuter;
+            this.statusRowCount.Name = "statusRowCount";
+            this.statusRowCount.Size = new System.Drawing.Size(47, 17);
+            this.statusRowCount.Text = "Rows: 0";
+            // 
+            // statusFileSize
+            // 
+            this.statusFileSize.BorderStyle = System.Windows.Forms.Border3DStyle.SunkenOuter;
+            this.statusFileSize.Name = "statusFileSize";
+            this.statusFileSize.Size = new System.Drawing.Size(56, 17);
+            this.statusFileSize.Text = "Size: 0 KB";
+            // 
+            // statusTimer
+            // 
+            this.statusTimer.Enabled = true;
+            this.statusTimer.Interval = 500;
+            this.statusTimer.Tick += new System.EventHandler(this.statusTimer_Tick);
+            // 
             // MainForm
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
@@ -114,6 +170,7 @@
             this.ClientSize = new System.Drawing.Size(842, 501);
             this.Controls.Add(this.queryTextBox);
             this.Controls.Add(this.groupBox1);
+            this.Controls.Add(this.statusStrip1);
             this.Controls.Add(this.menuStrip1);
             this.MainMenuStrip = this.menuStrip1;
             this.Name = "MainForm";
@@ -122,6 +179,8 @@
             this.menuStrip1.PerformLayout();
             this.groupBox1.ResumeLayout(false);
             this.groupBox1.PerformLayout();
+            this.statusStrip1.ResumeLayout(false);
+            this.statusStrip1.PerformLayout();
             this.ResumeLayout(false);
             this.PerformLayout();
 
@@ -136,6 +195,12 @@
         private System.Windows.Forms.GroupBox groupBox1;
         private System.Windows.Forms.Label label1;
         private System.Windows.Forms.ComboBox connectionDropdown;
+        private System.Windows.Forms.StatusStrip statusStrip1;
+        private System.Windows.Forms.ToolStripStatusLabel statusCurrentOperation;
+        private System.Windows.Forms.ToolStripStatusLabel statusElapsed;
+        private System.Windows.Forms.ToolStripStatusLabel statusRowCount;
+        private System.Windows.Forms.ToolStripStatusLabel statusFileSize;
+        private System.Windows.Forms.Timer statusTimer;
     }
 }
 
