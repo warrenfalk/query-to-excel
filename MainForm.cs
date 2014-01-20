@@ -157,6 +157,7 @@ namespace QueryToExcel
                     {
                         cmd.CommandType = CommandType.Text;
                         cmd.CommandText = queryTextBox.Text;
+                        cmd.CommandTimeout = 1000 * 60 * 10;
 
                         using (SqlDataReader reader = cmd.ExecuteReader())
                         {
