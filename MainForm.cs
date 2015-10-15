@@ -62,6 +62,8 @@ namespace QueryToExcel
             map.Add("nchar", null);
             map.Add("text", null);
             map.Add("ntext", null);
+            map.Add("datetime", null);
+            // TODO: add a style for "date"
             return map;
         }
 
